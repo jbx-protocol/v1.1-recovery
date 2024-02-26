@@ -13,6 +13,7 @@ import { parseAbi } from "viem";
 import "./style.css";
 
 const TERMINALV1_1 = "0x981c8ECD009E3E84eE1fF99266BF1461a12e5c68";
+const TERMINAL_V1_RESCUE = "0xE05605882C3F34B4Ef3586D70dE294f3f9654Ee8"
 const PONZIDAO_PROJECT_ID = 140n;
 const ROBDAO_PROJECT_ID = 447n;
 
@@ -42,16 +43,19 @@ const balanceOfAbi = parseAbi([
 const tapAbi = parseAbi([
   "function tap(uint256,uint256,uint256,uint256) returns (uint256)",
 ]);
+const rescueAbi = parseAbi(["function rescue(uint256,address,uint256)"])
+
+const migrateAbi = parseAbi(["function migrate(uint256,address)"])
 
 document.querySelector("#app").innerHTML = `
   <div>
     <h1>Juicebox v1.1 Recovery</h1>
     <h2>PonziDAO</h2>
-    <p>After calling "New Cycle", wait for the transaction to confirm before calling Send Payouts.</p>
+    <p>Do not migrate until JuiceboxDAO has approved your project for rescuing. Wait for the migrate transaction to finish before calling rescue.</p>
     <div class="card">
       <button class="connect">1. Connect</button>
-      <button id="ponzi-cycle">2. New cycle</button>
-      <button id="ponzi-payout">3. Send payouts</button>
+      <button id="ponzi-migrate">2. Migrate</button>
+      <button id="ponzi-rescue">3. Rescue</button>
     </div>
     <h2>RobDAO</h2>
     <p>After calling "New Cycle", wait 7 days (for the cycle to start) before calling Send Payouts.</p>
@@ -92,37 +96,34 @@ connectButtons.forEach(
     })
 );
 
-const ponziCycleButton = document.getElementById("ponzi-cycle");
-ponziCycleButton.onclick = async () => {
+const ponziMigrateButton = document.getElementById("ponzi-migrate");
+ponziMigrateButton.onclick = async () => {
   if (!result || !result.accounts[0]) {
     statusText.innerText += `\nConnect wallet first.`;
     return;
   }
 
   statusText.innerText += `\nWaiting for configure transaction approval...`;
-  const configureTxHash = await writeContract(config, {
+  const migrateTxHash = await writeContract(config, {
     address: TERMINALV1_1,
-    abi: configureAbi,
-    functionName: "configure",
+    abi: migrateAbi,
+    functionName: "migrate",
     args: [
       PONZIDAO_PROJECT_ID,
-      FULL_PAYOUT_PROPERTIES,
-      FULL_PAYOUT_METADATA,
-      [], // payout mods
-      [], // ticket mods
+      TERMINAL_V1_RESCUE,
     ],
   });
 
-  statusText.innerText += `\nConfiguring...`;
-  const configureReceipt = await waitForTransactionReceipt(config, {
-    hash: configureTxHash,
+  statusText.innerText += `\nMigrating...`;
+  const migrateReceipt = await waitForTransactionReceipt(config, {
+    hash: migrateTxHash,
   });
 
-  statusText.innerText += `\nConfigure successful. Hash: ${configureReceipt.transactionHash}`;
+  statusText.innerText += `\nMigration successful. Hash: ${migrateReceipt.transactionHash}`;
 };
 
-const ponziPayoutButton = document.getElementById("ponzi-payout");
-ponziPayoutButton.onclick = async () => {
+const ponziRescueButton = document.getElementById("ponzi-rescue");
+ponziRescueButton.onclick = async () => {
   if (!result || !result.accounts[0]) {
     statusText.innerText += `\nConnect wallet first.`;
     return;
@@ -130,30 +131,29 @@ ponziPayoutButton.onclick = async () => {
 
   statusText.innerText += `\nChecking project balance...`;
   const balance = await readContract(config, {
-    address: TERMINALV1_1,
+    address: TERMINAL_V1_RESCUE,
     abi: balanceOfAbi,
     functionName: "balanceOf",
     args: [PONZIDAO_PROJECT_ID],
   });
 
   statusText.innerText += `\nWaiting for payout transaction approval...`;
-  const payoutTxHash = await writeContract(config, {
-    address: TERMINALV1_1,
-    abi: tapAbi,
-    functionName: "tap",
+  const rescueTxHash = await writeContract(config, {
+    address: TERMINAL_V1_RESCUE,
+    abi: rescueAbi,
+    functionName: "rescue",
     args: [
       PONZIDAO_PROJECT_ID,
-      balance, // amount
-      0n, // currency
-      0n, // min returned wei
+      "0x518E850b139B6d81626B29E1B4e957AD345156A8", // recipient, PonziDAO owner
+      balance,
     ],
   });
 
-  statusText.innerText += `\nPaying out ETH...`;
-  const configureReceipt = await waitForTransactionReceipt(config, {
-    hash: payoutTxHash,
+  statusText.innerText += `\nRecovering ETH...`;
+  const rescueReceipt = await waitForTransactionReceipt(config, {
+    hash: rescueTxHash,
   });
-  statusText.innerText += `\nPayouts sent successfully. Hash: ${configureReceipt.transactionHash}`;
+  statusText.innerText += `\nETH recovered successfully. Hash: ${rescueReceipt.transactionHash}`;
 };
 
 const robCycleButton = document.getElementById("rob-cycle");
@@ -214,8 +214,8 @@ robPayoutButton.onclick = async () => {
   });
 
   statusText.innerText += `\nPaying out ETH...`;
-  const configureReceipt = await waitForTransactionReceipt(config, {
+  const payoutReceipt = await waitForTransactionReceipt(config, {
     hash: payoutTxHash,
   });
-  statusText.innerText += `\nPayouts sent successfully. Hash: ${configureReceipt.transactionHash}`;
+  statusText.innerText += `\nPayouts sent successfully. Hash: ${payoutReceipt.transactionHash}`;
 };
